@@ -106,6 +106,8 @@ parser.add_argument('--mft-assessment-full', action='store_true', help='enables 
 # Global Forward reconstruction configuration
 parser.add_argument('--fwdmatching-assessment-full', action='store_true', help='enables complete assessment of global forward reco')
 
+# Matching training for machine learning
+parser.add_argument('--fwdmatching-save-trainingdata', action='store_true', help='enables saving parameters at plane for matching training with machine learning')
 
 args = parser.parse_args()
 print (args)
@@ -733,6 +735,12 @@ for tf in range(1, NTIMEFRAMES + 1):
    MFTMCHMATCHtask['cmd']+= getDPL_global_options()
    workflow['stages'].append(MFTMCHMATCHtask)
 
+   if args.fwdmatching_save_trainingdata == True:
+      MFTMCHMATCHTraintask = createTask(name='mftmchMatchTrain_'+str(tf), needs=[MCHMIDMATCHtask['name'], MFTRECOtask['name']], tf=tf, cwd=timeframeworkdir, lab=["RECO"], mem='1500')
+      MFTMCHMATCHTraintask['cmd'] = '${O2_ROOT}/bin/o2-globalfwd-matcher-workflow ' + putConfigValues({**{"MFTClustererParam.dictFilePath" : "../", "FwdMatching.saveMode" : 2, "FwdMatching.useMIDMatch":"true"} , **AlpideConfig})
+      MFTMCHMATCHTraintask['cmd']+= getDPL_global_options()
+      workflow['stages'].append(MFTMCHMATCHTraintask)
+
    ## Vertexing
    PVConfig = {**AlpideConfig} # start with Alpide config which is relevant here
    if COLTYPEIR == 'pp': 
@@ -800,17 +808,12 @@ for tf in range(1, NTIMEFRAMES + 1):
      ### MFT
      
      # to be enabled once MFT Digits should run 5 times with different configurations
-     #for flp in range(5):
-     #  addQCPerTF(taskName='mftDigitsQC' + str(flp),
-     #             needs=[det_to_digitask["MFT"]['name']],
-     #             readerCommand='o2-qc-mft-digits-root-file-reader --mft-digit-infile=mftdigits.root',
-     #             configFilePath='json://${O2DPG_ROOT}/MC/config/QC/json/qc-mft-digit-' + str(flp) + '.json',
-     #             objectsFile='mftDigitsQC.root')
-     
-     addQCPerTF(taskName='mftDigitsQC',
-                needs=[det_to_digitask["MFT"]['name']],
-                readerCommand='o2-qc-mft-digits-root-file-reader --mft-digit-infile=mftdigits.root',
-                configFilePath='json://${O2DPG_ROOT}/MC/config/QC/json/qc-mft-digit.json')
+     for flp in range(5):
+       addQCPerTF(taskName='mftDigitsQC' + str(flp),
+                  needs=[det_to_digitask["MFT"]['name']],
+                  readerCommand='o2-qc-mft-digits-root-file-reader --mft-digit-infile=mftdigits.root',
+                  configFilePath='json://${O2DPG_ROOT}/MC/config/QC/json/qc-mft-digit-' + str(flp) + '.json',
+                  objectsFile='mftDigitsQC.root')
      addQCPerTF(taskName='mftClustersQC',
                 needs=[MFTRECOtask['name']],
                 readerCommand='o2-global-track-cluster-reader --track-types none --cluster-types MFT',
@@ -876,7 +879,7 @@ for tf in range(1, NTIMEFRAMES + 1):
 
    AODtask = createTask(name='aod_'+str(tf), needs=aodneeds, tf=tf, cwd=timeframeworkdir, lab=["AOD"], mem='4000', cpu='1')
    AODtask['cmd'] = ('','ln -nfs ../bkg_Kine.root . ;')[doembedding]
-   AODtask['cmd'] += '${O2_ROOT}/bin/o2-aod-producer-workflow --reco-mctracks-only 1 --aod-writer-keep dangling --aod-writer-resfile AO2D'
+   AODtask['cmd'] += '[ -f AO2D.root ] && rm AO2D.root; ${O2_ROOT}/bin/o2-aod-producer-workflow --reco-mctracks-only 1 --aod-writer-keep dangling --aod-writer-resfile AO2D'
    # next line needed for meta data writing (otherwise lost)
    AODtask['cmd'] += ' --aod-writer-resmode "UPDATE"'
    AODtask['cmd'] += ' --run-number ' + str(args.run)
@@ -985,7 +988,7 @@ if includeAnalysis:
 
    # Efficiency
    addAnalysisTask(tag="Efficiency",
-                   cmd="o2-analysis-timestamp --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-trackextension --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-trackselection --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-event-selection --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-qa-efficiency --eff-el 1 --eff-mu 1 --eff-pi 1 --eff-ka 1 --eff-pr 1 --eff-de 1 --eff-tr 1 --eff-he 1 --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json ", output="AnalysisResults.root")
+                   cmd="o2-analysis-timestamp --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-trackextension --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-trackselection --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-event-selection --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json | o2-analysis-qa-efficiency --eff-mc 1 --eff-mc-pos 1 --eff-mc-neg 1 --configuration json://${O2DPG_ROOT}/MC/config/QC/json/event-track-qa.json ", output="AnalysisResults.root")
 
    # Event and track QA
    addAnalysisTask(tag="EventTrackQA",
